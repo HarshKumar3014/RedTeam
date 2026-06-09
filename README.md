@@ -1,4 +1,4 @@
-# llm-redteam
+# AutoRedTeam
 
 Adversarial testing CLI for language models. Point it at any LLM, run a structured battery of attacks, get a graded report card.
 
