@@ -1,4 +1,5 @@
 # AutoRedTeam
+<img width="1721" height="914" alt="image" src="https://github.com/user-attachments/assets/13d5111a-bd14-4c49-ac7d-9cae0d56491e" />
 
 Adversarial testing CLI for language models. Point it at any LLM, run a structured battery of attacks, get a graded report card.
 
