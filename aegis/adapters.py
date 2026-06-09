@@ -51,9 +51,9 @@ class HuggingFaceAdapter(BaseAdapter):
         payload = {"inputs": full_prompt, "parameters": {"max_new_tokens": 512, "return_full_text": False}}
 
         start = time.monotonic()
-        for attempt in range(3):
-            try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                for attempt in range(3):
                     resp = await client.post(self.base_url, json=payload, headers=headers)
                     if resp.status_code == 503:
                         wait = float(resp.headers.get("X-Wait-For", 10 * (attempt + 1)))
@@ -66,10 +66,10 @@ class HuggingFaceAdapter(BaseAdapter):
                     if isinstance(data, list) and data:
                         return data[0].get("generated_text", ""), latency_ms
                     return str(data), latency_ms
-            except httpx.HTTPStatusError as e:
-                raise AdapterError(f"HuggingFace API HTTP {e.response.status_code}: {e.response.text}")
-            except Exception as e:
-                raise AdapterError(f"HuggingFace request failed: {e}")
+        except httpx.HTTPStatusError as e:
+            raise AdapterError(f"HuggingFace API HTTP {e.response.status_code}: {e.response.text[:200]}")
+        except Exception as e:
+            raise AdapterError(f"HuggingFace request failed: {e}")
         raise AdapterError(f"HuggingFace model {self.model} still loading after retries")
 
 
@@ -89,13 +89,13 @@ class OpenAIAdapter(BaseAdapter):
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
 
         start = time.monotonic()
-        for attempt in range(4):
-            try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            import asyncio
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                for attempt in range(4):
                     resp = await client.post(f"{self.base_url}/v1/chat/completions", json=payload, headers=headers)
                     latency_ms = (time.monotonic() - start) * 1000
                     if resp.status_code == 429:
-                        import asyncio
                         wait = float(resp.headers.get("retry-after", 10 * (attempt + 1)))
                         await asyncio.sleep(min(wait, 60))
                         continue
@@ -108,10 +108,10 @@ class OpenAIAdapter(BaseAdapter):
                     resp.raise_for_status()
                     data = resp.json()
                     return data["choices"][0]["message"]["content"], latency_ms
-            except httpx.HTTPStatusError as e:
-                raise AdapterError(f"OpenAI API HTTP {e.response.status_code}: {e.response.text}")
-            except Exception as e:
-                raise AdapterError(f"OpenAI request failed: {e}")
+        except httpx.HTTPStatusError as e:
+            raise AdapterError(f"OpenAI API HTTP {e.response.status_code}: {e.response.text[:200]}")
+        except Exception as e:
+            raise AdapterError(f"OpenAI request failed: {e}")
         raise AdapterError("Rate limit exceeded after retries")
 
 

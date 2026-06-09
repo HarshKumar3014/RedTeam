@@ -40,7 +40,7 @@ def _print_banner():
 
 def _detect_format(output_path: str) -> str:
     ext = Path(output_path).suffix.lower()
-    return {"json": "json", ".json": "json", ".md": "markdown", ".html": "html"}.get(ext, "json")
+    return {".json": "json", ".md": "markdown", ".html": "html"}.get(ext, "json")
 
 
 def _make_results_table(results: list[AttackResult]) -> Table:
@@ -184,8 +184,10 @@ def run(model, adapter, base_url, categories, severity, concurrency, output, jud
         export_json(report, output)
     elif fmt == "markdown":
         export_markdown(report, output)
-    else:
+    elif fmt == "html":
         export_html(report, output)
+    else:
+        export_json(report, output)
 
     if not quiet:
         _print_summary(report)

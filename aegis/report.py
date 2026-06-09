@@ -1,3 +1,4 @@
+import html as html_lib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,8 +45,8 @@ def build_report(
         cat_results = [r for r in results if r.attack.category == cat]
         if not cat_results:
             continue
-        cat_passed = sum(1 for r in cat_results if r.passed)
-        cat_failed = len(cat_results) - cat_passed
+        cat_passed = sum(1 for r in cat_results if r.passed and not r.error)
+        cat_failed = sum(1 for r in cat_results if not r.passed and not r.error)
         cat_score = _weighted_score(cat_results)
         critical_failures = [
             r.attack.id
@@ -211,14 +212,14 @@ def export_html(report: ReportCard, path: str) -> None:
     for r in report.results:
         status = "PASS" if r.passed else ("ERR" if r.error else "FAIL")
         status_class = "pass" if r.passed else ("error" if r.error else "fail")
-        prompt_escaped = r.attack.prompt.replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
-        response_escaped = r.response.replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
+        prompt_escaped = html_lib.escape(r.attack.prompt, quote=True)
+        response_escaped = html_lib.escape(r.response, quote=True)
         result_rows += f"""
         <tr class="result-row" data-category="{r.attack.category.value}" data-status="{status_class}"
             onclick="toggleRow(this)">
             <td>{r.attack.id}</td>
             <td>{r.attack.category.value}</td>
-            <td>{r.attack.name}</td>
+            <td>{html_lib.escape(r.attack.name)}</td>
             <td class="sev-{r.attack.severity.value}">{r.attack.severity.value.upper()}</td>
             <td class="{status_class}">{status}</td>
             <td>{r.score:.2f}</td>
@@ -229,19 +230,21 @@ def export_html(report: ReportCard, path: str) -> None:
                 <div class="detail-box">
                     <div class="detail-section"><strong>Prompt:</strong><pre>{prompt_escaped[:1000]}</pre></div>
                     <div class="detail-section"><strong>Response:</strong><pre>{response_escaped[:1000]}</pre></div>
-                    {f'<div class="detail-section error"><strong>Error:</strong> {r.error}</div>' if r.error else ""}
+                    {f'<div class="detail-section error"><strong>Error:</strong> {html_lib.escape(r.error)}</div>' if r.error else ""}
                 </div>
             </td>
         </tr>"""
 
-    rec_items = "".join(f"<li>{rec}</li>" for rec in report.recommendations)
+    rec_items = "".join(f"<li>{html_lib.escape(rec)}</li>" for rec in report.recommendations)
+    model_id_escaped = html_lib.escape(report.model_id)
+    adapter_escaped = html_lib.escape(report.adapter)
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LLM Red Team Report — {report.model_id}</title>
+<title>LLM Red Team Report — {model_id_escaped}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -290,7 +293,7 @@ footer {{ text-align: center; padding: 24px; color: #8b949e; font-size: 0.8rem; 
 <div class="header">
   <h1>⚔ LLM RED TEAM AUDIT</h1>
   <div>
-    <span style="color:#8b949e;margin-right:8px">{report.model_id} · {report.adapter}</span>
+    <span style="color:#8b949e;margin-right:8px">{model_id_escaped} · {adapter_escaped}</span>
     <span class="badge">AUDIT COMPLETE</span>
   </div>
 </div>

@@ -7,7 +7,10 @@ import yaml
 
 from aegis import Attack, AttackResult, Category, Severity
 from aegis.adapters import BaseAdapter, AdapterError
+import sys
+
 from aegis import scorer as scorer_module
+from aegis.scorer import AMBIGUOUS_SCORE
 
 
 SEVERITY_ORDER = {Severity.LOW: 0, Severity.MEDIUM: 1, Severity.HIGH: 2, Severity.CRITICAL: 3}
@@ -18,7 +21,7 @@ def load_attacks(
     min_severity: str | None = None,
 ) -> list[Attack]:
     try:
-        pkg = importlib.resources.files("redteam.attacks")
+        pkg = importlib.resources.files("aegis.attacks")
         yaml_files = [f for f in pkg.iterdir() if str(f).endswith(".yaml")]
     except Exception:
         attacks_dir = Path(__file__).parent / "attacks"
@@ -29,10 +32,14 @@ def load_attacks(
         try:
             content = f.read_text() if hasattr(f, "read_text") else Path(str(f)).read_text()
             data = yaml.safe_load(content)
-            for entry in data.get("attacks", []):
-                all_attacks.append(Attack(**entry))
-        except Exception:
+        except Exception as e:
+            print(f"[aegis] Warning: skipped attack file {f}: {e}", file=sys.stderr)
             continue
+        for entry in data.get("attacks", []):
+            try:
+                all_attacks.append(Attack(**entry))
+            except Exception as e:
+                print(f"[aegis] Warning: skipped attack entry in {f}: {e}", file=sys.stderr)
 
     if categories:
         cat_set = set(c.lower() for c in categories)
@@ -62,7 +69,7 @@ async def run_campaign(
             try:
                 response, latency_ms = await adapter.complete(attack.prompt, attack.system_prompt)
                 passed, sc, flags = scorer_module.score_rule_based(attack, response)
-                if judge_adapter is not None and abs(sc - 0.7) < 0.01:
+                if judge_adapter is not None and abs(sc - AMBIGUOUS_SCORE) < 0.01:
                     try:
                         passed, sc, flags = await scorer_module.score_llm_judge(attack, response, judge_adapter)
                     except Exception:

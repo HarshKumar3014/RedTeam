@@ -44,14 +44,21 @@ async def get_report():
 @app.post("/api/load")
 async def load_report(req: LoadRequest):
     global _current_report
-    p = Path(req.path)
+    p = Path(req.path).resolve()
+    # Restrict to JSON files under the working directory
+    try:
+        p.relative_to(Path.cwd())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path must be within the current working directory")
+    if p.suffix.lower() != ".json":
+        raise HTTPException(status_code=400, detail="Only .json report files are supported")
     if not p.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {req.path}")
+        raise HTTPException(status_code=404, detail="File not found")
     try:
         _current_report = ReportCard.model_validate_json(p.read_text())
         return {"status": "ok", "model": _current_report.model_id}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to parse report: {e}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to parse report: invalid report format")
 
 
 def serve(report: ReportCard, host: str = "127.0.0.1", port: int = 8080):
