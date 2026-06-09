@@ -5,9 +5,9 @@ from typing import Callable, Optional
 
 import yaml
 
-from redteam import Attack, AttackResult, Category, Severity
-from redteam.adapters import BaseAdapter, AdapterError
-from redteam import scorer as scorer_module
+from aegis import Attack, AttackResult, Category, Severity
+from aegis.adapters import BaseAdapter, AdapterError
+from aegis import scorer as scorer_module
 
 
 SEVERITY_ORDER = {Severity.LOW: 0, Severity.MEDIUM: 1, Severity.HIGH: 2, Severity.CRITICAL: 3}

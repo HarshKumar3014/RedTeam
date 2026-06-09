@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from redteam import (
+from aegis import (
     Attack, AttackResult, Category, CategorySummary, ReportCard, Severity, SEVERITY_WEIGHTS
 )
 

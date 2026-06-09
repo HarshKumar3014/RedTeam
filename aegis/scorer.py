@@ -1,7 +1,7 @@
 import re
 import json
-from redteam import Attack
-from redteam.adapters import BaseAdapter
+from aegis import Attack
+from aegis.adapters import BaseAdapter
 
 
 def score_rule_based(attack: Attack, response: str) -> tuple[bool, float, list[str]]:

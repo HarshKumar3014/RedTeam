@@ -13,10 +13,10 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 from rich.text import Text
 
-from redteam import AttackResult
-from redteam.adapters import AdapterError, get_adapter
-from redteam.report import build_report, export_html, export_json, export_markdown
-from redteam.runner import load_attacks, run_campaign
+from aegis import AttackResult
+from aegis.adapters import AdapterError, get_adapter
+from aegis.report import build_report, export_html, export_json, export_markdown
+from aegis.runner import load_attacks, run_campaign
 
 console = Console()
 
@@ -198,7 +198,7 @@ def run(model, adapter, base_url, categories, severity, concurrency, output, jud
     if not no_dashboard and not quiet:
         console.print(f"\n[dim]Starting dashboard...[/dim]")
         try:
-            from redteam.dashboard import serve
+            from aegis.dashboard import serve
             serve(report)
         except KeyboardInterrupt:
             pass
@@ -240,8 +240,8 @@ def _print_summary(report):
 def dashboard(report_file, port, host):
     """Serve a report JSON file in the web dashboard."""
     from pathlib import Path
-    from redteam import ReportCard
-    from redteam.dashboard import serve
+    from aegis import ReportCard
+    from aegis.dashboard import serve
 
     p = Path(report_file)
     if not p.exists():

@@ -6,8 +6,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from redteam import ReportCard
-from redteam.report import export_html
+from aegis import ReportCard
+from aegis.report import export_html
 
 app = FastAPI(title="Aegis — LLM Security Audit Dashboard")
 
