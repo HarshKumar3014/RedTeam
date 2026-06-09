@@ -30,7 +30,7 @@ Each attack is scored automatically using regex pattern matching (+ optional LLM
 
 ```bash
 git clone <repo>
-cd llm-redteam
+cd llm-aegis
 pip install -e .
 ```
 
