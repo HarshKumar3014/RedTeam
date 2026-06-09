@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from redteam import ReportCard
 from redteam.report import export_html
 
-app = FastAPI(title="LLM Red Team Dashboard")
+app = FastAPI(title="Aegis — LLM Security Audit Dashboard")
 
 _current_report: Optional[ReportCard] = None
 

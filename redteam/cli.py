@@ -21,13 +21,13 @@ from redteam.runner import load_attacks, run_campaign
 console = Console()
 
 _BANNER = """\
-[bold red] ██████╗ ███████╗██████╗ ████████╗███████╗ █████╗ ███╗   ███╗[/bold red]
-[bold red] ██╔══██╗██╔════╝██╔══██╗╚══██╔══╝██╔════╝██╔══██╗████╗ ████║[/bold red]
-[bold red] ██████╔╝█████╗  ██║  ██║   ██║   █████╗  ███████║██╔████╔██║[/bold red]
-[bold red] ██╔══██╗██╔══╝  ██║  ██║   ██║   ██╔══╝  ██╔══██║██║╚██╔╝██║[/bold red]
-[bold red] ██║  ██║███████╗██████╔╝   ██║   ███████╗██║  ██║██║ ╚═╝ ██║[/bold red]
-[bold red] ╚═╝  ╚═╝╚══════╝╚═════╝    ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝[/bold red]
-[dim]         adversarial testing for language models[/dim]   [bold green]v0.1.0[/bold green]"""
+[bold red] █████╗ ███████╗ ██████╗ ██╗███████╗[/bold red]
+[bold red]██╔══██╗██╔════╝██╔════╝ ██║██╔════╝[/bold red]
+[bold red]███████║█████╗  ██║  ███╗██║███████╗[/bold red]
+[bold red]██╔══██║██╔══╝  ██║   ██║██║╚════██║[/bold red]
+[bold red]██║  ██║███████╗╚██████╔╝██║███████║[/bold red]
+[bold red]╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝[/bold red]
+[dim]    adversarial testing for language models[/dim]   [bold green]v0.1.0[/bold green]"""
 
 
 def _print_banner():
@@ -78,7 +78,7 @@ def _make_results_table(results: list[AttackResult]) -> Table:
 @click.group(invoke_without_command=True)
 @click.pass_context
 def cli(ctx):
-    """LLM Red Team — adversarial testing for language models."""
+    """Aegis — adversarial testing for language models."""
     if ctx.invoked_subcommand is None:
         _print_banner()
         click.echo(ctx.get_help())
