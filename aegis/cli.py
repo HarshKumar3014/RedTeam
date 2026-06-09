@@ -5,8 +5,7 @@ from pathlib import Path
 
 import click
 from rich.align import Align
-from rich.console import Console
-from rich.layout import Layout
+from rich.console import Console, Group
 from rich.live import Live
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
@@ -163,20 +162,16 @@ def run(model, adapter, base_url, categories, severity, concurrency, output, jud
             console=console,
         )
         task_id = progress.add_task("Running attacks", total=len(attacks))
-        live_table = _make_results_table([])
 
-        layout = Layout()
-        layout.split_column(
-            Layout(progress, name="progress", size=3),
-            Layout(live_table, name="table"),
-        )
-
-        def on_progress(completed: int, total: int):
-            progress.update(task_id, completed=completed)
-            layout["table"].update(_make_results_table(results))
+        def get_renderable():
+            return Group(progress, _make_results_table(results))
 
         start = time.monotonic()
-        with Live(layout, console=console, refresh_per_second=4):
+        with Live(get_renderable(), console=console, refresh_per_second=4) as live:
+            def on_progress(completed: int, total: int):
+                progress.update(task_id, completed=completed)
+                live.update(get_renderable())
+
             results = asyncio.run(
                 run_campaign(attacks, target_adapter, concurrency, on_progress, judge_adapter=judge_adapter)
             )
