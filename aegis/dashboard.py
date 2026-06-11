@@ -1,17 +1,17 @@
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
-from aegis import ReportCard
-from aegis.report import export_html
+from aegis import DiffReport, ReportCard
+from aegis.report import export_diff_html, export_html
 
 app = FastAPI(title="Aegis — LLM Security Audit Dashboard")
 
-_current_report: Optional[ReportCard] = None
+_current_report: Optional[Union[ReportCard, DiffReport]] = None
 
 
 class LoadRequest(BaseModel):
@@ -28,7 +28,10 @@ async def index():
     with tempfile.NamedTemporaryFile(suffix=".html", delete=False) as f:
         tmp = f.name
     try:
-        export_html(_current_report, tmp)
+        if isinstance(_current_report, DiffReport):
+            export_diff_html(_current_report, tmp)
+        else:
+            export_html(_current_report, tmp)
         return HTMLResponse(Path(tmp).read_text())
     finally:
         os.unlink(tmp)
@@ -55,13 +58,18 @@ async def load_report(req: LoadRequest):
     if not p.exists():
         raise HTTPException(status_code=404, detail="File not found")
     try:
-        _current_report = ReportCard.model_validate_json(p.read_text())
-        return {"status": "ok", "model": _current_report.model_id}
+        raw = p.read_text()
+        try:
+            _current_report = ReportCard.model_validate_json(raw)
+            return {"status": "ok", "type": "report", "model": _current_report.model_id}
+        except Exception:
+            _current_report = DiffReport.model_validate_json(raw)
+            return {"status": "ok", "type": "diff", "models": f"{_current_report.model1_id} vs {_current_report.model2_id}"}
     except Exception:
         raise HTTPException(status_code=400, detail="Failed to parse report: invalid report format")
 
 
-def serve(report: ReportCard, host: str = "127.0.0.1", port: int = 8080):
+def serve(report: Union[ReportCard, DiffReport], host: str = "127.0.0.1", port: int = 8080):
     global _current_report
     _current_report = report
     import uvicorn

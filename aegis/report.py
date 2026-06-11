@@ -192,6 +192,154 @@ def build_diff_report(
     )
 
 
+def export_diff_html(report: DiffReport, path: str) -> None:
+    grade_color = {"A": "#00ff88", "B": "#58a6ff", "C": "#ffa502", "D": "#ff6b35", "F": "#ff4757"}
+    g1c = grade_color.get(report.model1_grade, "#fff")
+    g2c = grade_color.get(report.model2_grade, "#fff")
+
+    m1e = html_lib.escape(report.model1_id)
+    m2e = html_lib.escape(report.model2_id)
+
+    rows = ""
+    for c in report.comparisons:
+        if c.model1_passed and c.model2_passed:
+            row_class, label = "both-pass", "BOTH PASS"
+        elif not c.model1_passed and not c.model2_passed:
+            row_class, label = "both-fail", "BOTH FAIL"
+        elif not c.model1_passed:
+            row_class, label = "m1-fail", f"{m1e} FAIL"
+        else:
+            row_class, label = "m2-fail", f"{m2e} FAIL"
+
+        sev_class = f"sev-{c.severity}"
+        rows += f"""
+        <tr class="{row_class}">
+            <td>{html_lib.escape(c.attack_id)}</td>
+            <td>{html_lib.escape(c.category)}</td>
+            <td>{html_lib.escape(c.attack_name)}</td>
+            <td class="{sev_class}">{c.severity.upper()}</td>
+            <td class="{'pass' if c.model1_passed else 'fail'}">{c.model1_score:.2f}</td>
+            <td class="{'pass' if c.model2_passed else 'fail'}">{c.model2_score:.2f}</td>
+            <td class="diff-label {row_class}-label">{label}</td>
+        </tr>"""
+
+    m1_only = html_lib.escape(", ".join(report.model1_only_failures) or "none")
+    m2_only = html_lib.escape(", ".join(report.model2_only_failures) or "none")
+    both_f  = html_lib.escape(", ".join(report.both_failed) or "none")
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aegis Diff — {m1e} vs {m2e}</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+* {{ box-sizing: border-box; margin: 0; padding: 0; }}
+body {{ background: #0d1117; color: #c9d1d9; font-family: 'JetBrains Mono', monospace; line-height: 1.6; }}
+.header {{ background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 32px; display: flex; justify-content: space-between; align-items: center; }}
+.header h1 {{ color: #00ff88; font-size: 1.1rem; }}
+.badge {{ background: #58a6ff; color: #0d1117; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 700; }}
+.hero {{ display: grid; grid-template-columns: 1fr 60px 1fr; gap: 0; padding: 48px 32px; text-align: center; }}
+.model-card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 32px; }}
+.grade {{ font-size: 6rem; font-weight: 700; }}
+.score {{ font-size: 1.5rem; color: #c9d1d9; margin-top: -8px; }}
+.model-name {{ color: #8b949e; font-size: 0.85rem; margin-top: 8px; word-break: break-all; }}
+.vs {{ display: flex; align-items: center; justify-content: center; color: #30363d; font-size: 1.5rem; font-weight: 700; }}
+.section {{ padding: 32px; border-top: 1px solid #30363d; }}
+.section h2 {{ color: #58a6ff; margin-bottom: 16px; }}
+.diverge-grid {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 24px; }}
+.diverge-card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; }}
+.diverge-card h3 {{ font-size: 0.85rem; margin-bottom: 8px; }}
+.diverge-card p {{ color: #8b949e; font-size: 0.8rem; }}
+table {{ width: 100%; border-collapse: collapse; font-size: 0.82rem; }}
+th {{ background: #161b22; padding: 10px; text-align: left; color: #8b949e; border-bottom: 1px solid #30363d; }}
+td {{ padding: 8px 10px; border-bottom: 1px solid #21262d; }}
+.both-pass {{ background: rgba(0,255,136,0.04); }}
+.both-fail {{ background: rgba(255,71,87,0.08); }}
+.m1-fail {{ background: rgba(255,165,2,0.08); }}
+.m2-fail {{ background: rgba(88,166,255,0.08); }}
+.diff-label {{ font-weight: 700; font-size: 0.75rem; }}
+.both-pass-label {{ color: #00ff88; }}
+.both-fail-label {{ color: #ff4757; }}
+.m1-fail-label {{ color: #ffa502; }}
+.m2-fail-label {{ color: #58a6ff; }}
+.pass {{ color: #00ff88; }}
+.fail {{ color: #ff4757; }}
+.sev-critical {{ color: #ff4757; font-weight: 700; }}
+.sev-high {{ color: #ffa502; }}
+.sev-medium {{ color: #58a6ff; }}
+.sev-low {{ color: #8b949e; }}
+.legend {{ display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }}
+.legend-item {{ font-size: 0.8rem; padding: 4px 10px; border-radius: 4px; }}
+footer {{ text-align: center; padding: 24px; color: #8b949e; font-size: 0.8rem; border-top: 1px solid #30363d; }}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>⚔ AEGIS DIFFERENTIAL AUDIT</h1>
+  <span class="badge">DIFF REPORT</span>
+</div>
+
+<div class="hero">
+  <div class="model-card">
+    <div class="grade" style="color:{g1c};text-shadow:0 0 40px {g1c}88">{report.model1_grade}</div>
+    <div class="score">{report.model1_overall:.1f}/100</div>
+    <div class="model-name">{m1e}</div>
+  </div>
+  <div class="vs">VS</div>
+  <div class="model-card">
+    <div class="grade" style="color:{g2c};text-shadow:0 0 40px {g2c}88">{report.model2_grade}</div>
+    <div class="score">{report.model2_overall:.1f}/100</div>
+    <div class="model-name">{m2e}</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Divergence Summary</h2>
+  <div class="diverge-grid">
+    <div class="diverge-card">
+      <h3 style="color:#ffa502">⚠ {m1e} only failed ({len(report.model1_only_failures)})</h3>
+      <p>{m1_only}</p>
+    </div>
+    <div class="diverge-card">
+      <h3 style="color:#58a6ff">⚠ {m2e} only failed ({len(report.model2_only_failures)})</h3>
+      <p>{m2_only}</p>
+    </div>
+    <div class="diverge-card">
+      <h3 style="color:#ff4757">✗ Both failed ({len(report.both_failed)})</h3>
+      <p>{both_f}</p>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="legend-item both-pass-label">■ Both passed</span>
+    <span class="legend-item m1-fail-label">■ {m1e} only failed</span>
+    <span class="legend-item m2-fail-label">■ {m2e} only failed</span>
+    <span class="legend-item both-fail-label">■ Both failed</span>
+  </div>
+
+  <table>
+    <thead><tr>
+      <th>ID</th><th>Category</th><th>Name</th><th>Sev</th>
+      <th>{m1e}</th><th>{m2e}</th><th>Result</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+  </table>
+</div>
+
+<div class="section">
+  <p style="color:#8b949e;font-size:0.8rem">
+    {report.total_attacks} attacks · {report.duration_seconds:.1f}s · {report.timestamp}
+  </p>
+</div>
+
+<footer>Generated by <strong>Aegis</strong></footer>
+</body>
+</html>"""
+    Path(path).write_text(html)
+
+
 def export_json(report: ReportCard, path: str) -> None:
     Path(path).write_text(report.model_dump_json(indent=2))
 

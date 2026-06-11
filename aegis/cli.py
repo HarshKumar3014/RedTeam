@@ -235,9 +235,9 @@ def _print_summary(report):
 @click.option("--port", default=8080, show_default=True)
 @click.option("--host", default="127.0.0.1", show_default=True)
 def dashboard(report_file, port, host):
-    """Serve a report JSON file in the web dashboard."""
+    """Serve a report or diff report JSON file in the web dashboard."""
     from pathlib import Path
-    from aegis import ReportCard
+    from aegis import DiffReport, ReportCard
     from aegis.dashboard import serve
 
     p = Path(report_file)
@@ -245,14 +245,24 @@ def dashboard(report_file, port, host):
         console.print(f"[red]File not found: {report_file}[/red]")
         sys.exit(1)
 
+    raw = p.read_text()
+    report = None
     try:
-        report = ReportCard.model_validate_json(p.read_text())
-    except Exception as e:
-        console.print(f"[red]Failed to parse report: {e}[/red]")
-        sys.exit(1)
+        report = ReportCard.model_validate_json(raw)
+        label = f"[cyan]{report.model_id}[/cyan]"
+    except Exception:
+        pass
+    if report is None:
+        try:
+            report = DiffReport.model_validate_json(raw)
+            label = f"[cyan]{report.model1_id}[/cyan] vs [cyan]{report.model2_id}[/cyan]"
+        except Exception as e:
+            console.print(f"[red]Failed to parse report: {e}[/red]")
+            sys.exit(1)
 
     _print_banner()
-    console.print(f"[green]Dashboard at http://{host}:{port}[/green]")
+    console.print(f"  Report: {label}")
+    console.print(f"[green]  Dashboard at http://{host}:{port}[/green]\n")
     try:
         serve(report, host=host, port=port)
     except KeyboardInterrupt:
@@ -305,7 +315,8 @@ def list_attacks(category, severity, fmt):
 @click.option("--severity", default="low", show_default=True, help="Min severity")
 @click.option("--concurrency", default=5, show_default=True, help="Parallel requests per model")
 @click.option("--output", default="diff_report.json", show_default=True, help="Output path (.json)")
-def diff(model1, model2, adapter, adapter2, base_url, base_url2, categories, severity, concurrency, output):
+@click.option("--no-dashboard", is_flag=True, help="Skip launching dashboard after run")
+def diff(model1, model2, adapter, adapter2, base_url, base_url2, categories, severity, concurrency, output, no_dashboard):
     """Compare two models on the same attack suite."""
     from dotenv import load_dotenv
     load_dotenv()
@@ -402,3 +413,11 @@ def diff(model1, model2, adapter, adapter2, base_url, base_url2, categories, sev
         console.print(f"[yellow]Both failed:[/yellow] {', '.join(diff_report.both_failed[:10])}")
 
     console.print(f"\n[dim]Diff report saved to {output}[/dim]")
+
+    if not no_dashboard:
+        console.print(f"[dim]Starting dashboard...[/dim]")
+        try:
+            from aegis.dashboard import serve
+            serve(diff_report)
+        except KeyboardInterrupt:
+            pass
