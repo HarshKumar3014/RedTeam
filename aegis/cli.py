@@ -26,7 +26,7 @@ _BANNER = """\
 [bold red]██╔══██║██╔══╝  ██║   ██║██║╚════██║[/bold red]
 [bold red]██║  ██║███████╗╚██████╔╝██║███████║[/bold red]
 [bold red]╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝╚══════╝[/bold red]
-[dim]    adversarial testing for language models[/dim]   [bold green]v0.1.0[/bold green]"""
+[dim]    adversarial testing for language models[/dim]   [bold green]v0.2.0[/bold green]"""
 
 
 def _print_banner():
