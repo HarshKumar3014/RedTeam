@@ -104,11 +104,13 @@ async def run_diff_campaign(
     adapter1: BaseAdapter,
     adapter2: BaseAdapter,
     concurrency: int = 5,
+    progress_callback1: Callable[[int, int], None] | None = None,
+    progress_callback2: Callable[[int, int], None] | None = None,
     judge_adapter: BaseAdapter | None = None,
 ) -> tuple[list[AttackResult], list[AttackResult]]:
     results1, results2 = await asyncio.gather(
-        run_campaign(attacks, adapter1, concurrency, judge_adapter=judge_adapter),
-        run_campaign(attacks, adapter2, concurrency, judge_adapter=judge_adapter),
+        run_campaign(attacks, adapter1, concurrency, progress_callback1, judge_adapter=judge_adapter),
+        run_campaign(attacks, adapter2, concurrency, progress_callback2, judge_adapter=judge_adapter),
     )
     return list(results1), list(results2)
 

@@ -338,9 +338,30 @@ def diff(model1, model2, adapter, adapter2, base_url, base_url2, categories, sev
     console.print(f"  Model 2: [cyan]{model2}[/cyan] via [cyan]{adapter2_name}[/cyan]")
     console.print(f"  Attacks: [cyan]{len(attacks)}[/cyan] | Concurrency: [cyan]{concurrency}[/cyan]\n")
 
+    progress = Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("[dim]{task.completed}/{task.total}"),
+        console=console,
+    )
+    task1 = progress.add_task(f"[cyan]{model1[:24]}[/cyan]", total=len(attacks))
+    task2 = progress.add_task(f"[green]{model2[:24]}[/green]", total=len(attacks))
+
+    def on_progress1(completed: int, total: int):
+        progress.update(task1, completed=completed)
+        live.update(progress)
+
+    def on_progress2(completed: int, total: int):
+        progress.update(task2, completed=completed)
+        live.update(progress)
+
     start = time.monotonic()
-    console.print("[dim]Running both models concurrently...[/dim]")
-    results1, results2 = asyncio.run(run_diff_campaign(attacks, target1, target2, concurrency))
+    with Live(progress, console=console, refresh_per_second=4) as live:
+        results1, results2 = asyncio.run(
+            run_diff_campaign(attacks, target1, target2, concurrency, on_progress1, on_progress2)
+        )
     duration = time.monotonic() - start
 
     diff_report = build_diff_report(
