@@ -52,6 +52,23 @@ def load_attacks(
     return all_attacks
 
 
+async def _run_multi_turn(attack: "Attack", adapter: "BaseAdapter") -> tuple[str, float]:
+    messages: list[dict] = []
+    total_latency = 0.0
+    score_idx = attack.score_turn if attack.score_turn >= 0 else len(attack.turns) + attack.score_turn
+    scored_response = ""
+
+    for i, turn_prompt in enumerate(attack.turns):
+        messages.append({"role": "user", "content": turn_prompt})
+        response, latency_ms = await adapter.complete_conversation(messages, attack.system_prompt)
+        total_latency += latency_ms
+        messages.append({"role": "assistant", "content": response})
+        if i == score_idx:
+            scored_response = response
+
+    return scored_response, total_latency
+
+
 async def run_campaign(
     attacks: list[Attack],
     adapter: BaseAdapter,
@@ -67,7 +84,10 @@ async def run_campaign(
         nonlocal completed
         async with semaphore:
             try:
-                response, latency_ms = await adapter.complete(attack.prompt, attack.system_prompt)
+                if attack.is_multi_turn:
+                    response, latency_ms = await _run_multi_turn(attack, adapter)
+                else:
+                    response, latency_ms = await adapter.complete(attack.prompt, attack.system_prompt)
                 passed, sc, flags = scorer_module.score_rule_based(attack, response)
                 if judge_adapter is not None and abs(sc - AMBIGUOUS_SCORE) < 0.01:
                     try:

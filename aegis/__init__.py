@@ -30,13 +30,19 @@ class Attack(BaseModel):
     name: str
     category: Category
     severity: Severity
-    prompt: str
+    prompt: str = ""
+    turns: list[str] = []
+    score_turn: int = -1
     system_prompt: Optional[str] = None
     expected_behavior: ExpectedBehavior
     detection_patterns: list[str] = []
     refusal_patterns: list[str] = []
     tags: list[str] = []
     description: str = ""
+
+    @property
+    def is_multi_turn(self) -> bool:
+        return len(self.turns) > 1
 
 
 class AttackResult(BaseModel):

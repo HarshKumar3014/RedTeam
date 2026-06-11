@@ -12,6 +12,11 @@ class BaseAdapter:
     async def complete(self, prompt: str, system_prompt: str | None = None) -> tuple[str, float]:
         raise NotImplementedError
 
+    async def complete_conversation(
+        self, messages: list[dict], system_prompt: str | None = None
+    ) -> tuple[str, float]:
+        raise NotImplementedError
+
 
 class OllamaAdapter(BaseAdapter):
     def __init__(self, model: str, base_url: str = "http://localhost:11434"):
@@ -31,6 +36,30 @@ class OllamaAdapter(BaseAdapter):
                 latency_ms = (time.monotonic() - start) * 1000
                 data = resp.json()
                 return data.get("response", ""), latency_ms
+        except httpx.ConnectError:
+            raise AdapterError(f"Cannot connect to Ollama at {self.base_url}. Is it running?")
+        except httpx.HTTPStatusError as e:
+            raise AdapterError(f"Ollama returned HTTP {e.response.status_code}: {e.response.text}")
+        except Exception as e:
+            raise AdapterError(f"Ollama request failed: {e}")
+
+    async def complete_conversation(
+        self, messages: list[dict], system_prompt: str | None = None
+    ) -> tuple[str, float]:
+        chat_messages = []
+        if system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+        chat_messages.extend(messages)
+
+        payload = {"model": self.model, "messages": chat_messages, "stream": False}
+        start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                resp = await client.post(f"{self.base_url}/api/chat", json=payload)
+                resp.raise_for_status()
+                latency_ms = (time.monotonic() - start) * 1000
+                data = resp.json()
+                return data.get("message", {}).get("content", ""), latency_ms
         except httpx.ConnectError:
             raise AdapterError(f"Cannot connect to Ollama at {self.base_url}. Is it running?")
         except httpx.HTTPStatusError as e:
@@ -71,6 +100,18 @@ class HuggingFaceAdapter(BaseAdapter):
         except Exception as e:
             raise AdapterError(f"HuggingFace request failed: {e}")
         raise AdapterError(f"HuggingFace model {self.model} still loading after retries")
+
+    async def complete_conversation(
+        self, messages: list[dict], system_prompt: str | None = None
+    ) -> tuple[str, float]:
+        parts = []
+        if system_prompt:
+            parts.append(f"System: {system_prompt}")
+        for m in messages:
+            role = m.get("role", "user").capitalize()
+            parts.append(f"{role}: {m.get('content', '')}")
+        parts.append("Assistant:")
+        return await self.complete("\n\n".join(parts))
 
 
 class OpenAIAdapter(BaseAdapter):
@@ -114,6 +155,43 @@ class OpenAIAdapter(BaseAdapter):
             raise AdapterError(f"OpenAI request failed: {e}")
         raise AdapterError("Rate limit exceeded after retries")
 
+    async def complete_conversation(
+        self, messages: list[dict], system_prompt: str | None = None
+    ) -> tuple[str, float]:
+        chat_messages = []
+        if system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+        chat_messages.extend(messages)
+
+        payload = {"model": self.model, "messages": chat_messages}
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+        start = time.monotonic()
+        try:
+            import asyncio
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                for attempt in range(4):
+                    resp = await client.post(f"{self.base_url}/v1/chat/completions", json=payload, headers=headers)
+                    latency_ms = (time.monotonic() - start) * 1000
+                    if resp.status_code == 429:
+                        wait = float(resp.headers.get("retry-after", 10 * (attempt + 1)))
+                        await asyncio.sleep(min(wait, 60))
+                        continue
+                    if resp.status_code in (400, 422):
+                        try:
+                            msg = resp.json().get("error", {}).get("message", resp.text)
+                        except Exception:
+                            msg = resp.text
+                        return f"I cannot and will not assist with that request. [API policy: {msg[:120]}]", latency_ms
+                    resp.raise_for_status()
+                    data = resp.json()
+                    return data["choices"][0]["message"]["content"], latency_ms
+        except httpx.HTTPStatusError as e:
+            raise AdapterError(f"OpenAI API HTTP {e.response.status_code}: {e.response.text[:200]}")
+        except Exception as e:
+            raise AdapterError(f"OpenAI request failed: {e}")
+        raise AdapterError("Rate limit exceeded after retries")
+
 
 class AnthropicAdapter(BaseAdapter):
     def __init__(self, model: str, api_key: str):
@@ -125,6 +203,36 @@ class AnthropicAdapter(BaseAdapter):
             "model": self.model,
             "max_tokens": 1024,
             "messages": [{"role": "user", "content": prompt}],
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json",
+        }
+
+        start = time.monotonic()
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                resp = await client.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers)
+                resp.raise_for_status()
+                latency_ms = (time.monotonic() - start) * 1000
+                data = resp.json()
+                return data["content"][0]["text"], latency_ms
+        except httpx.HTTPStatusError as e:
+            raise AdapterError(f"Anthropic API HTTP {e.response.status_code}: {e.response.text}")
+        except Exception as e:
+            raise AdapterError(f"Anthropic request failed: {e}")
+
+    async def complete_conversation(
+        self, messages: list[dict], system_prompt: str | None = None
+    ) -> tuple[str, float]:
+        payload: dict = {
+            "model": self.model,
+            "max_tokens": 1024,
+            "messages": messages,
         }
         if system_prompt:
             payload["system"] = system_prompt
