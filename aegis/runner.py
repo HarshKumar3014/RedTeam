@@ -19,7 +19,7 @@ SEVERITY_ORDER = {Severity.LOW: 0, Severity.MEDIUM: 1, Severity.HIGH: 2, Severit
 def load_attacks(
     categories: list[str] | None = None,
     min_severity: str | None = None,
-) -> list[Attack]:
+) -> tuple[list[Attack], dict[str, str]]:
     try:
         pkg = importlib.resources.files("aegis.attacks")
         yaml_files = [f for f in pkg.iterdir() if str(f).endswith(".yaml")]
@@ -28,15 +28,21 @@ def load_attacks(
         yaml_files = list(attacks_dir.glob("*.yaml"))
 
     all_attacks: list[Attack] = []
+    pack_versions: dict[str, str] = {}
+
     for f in yaml_files:
+        fname = Path(str(f)).name
         try:
             content = f.read_text() if hasattr(f, "read_text") else Path(str(f)).read_text()
             data = yaml.safe_load(content)
         except Exception as e:
             print(f"[aegis] Warning: skipped attack file {f}: {e}", file=sys.stderr)
             continue
+        version = str(data.get("version", "1.0"))
+        pack_versions[fname] = version
         for entry in data.get("attacks", []):
             try:
+                entry.setdefault("pack_version", version)
                 all_attacks.append(Attack(**entry))
             except Exception as e:
                 print(f"[aegis] Warning: skipped attack entry in {f}: {e}", file=sys.stderr)
@@ -49,7 +55,31 @@ def load_attacks(
         min_level = SEVERITY_ORDER.get(Severity(min_severity), 0)
         all_attacks = [a for a in all_attacks if SEVERITY_ORDER.get(a.severity, 0) >= min_level]
 
-    return all_attacks
+    return all_attacks, pack_versions
+
+
+async def _run_chained(
+    attack: "Attack", attack_lookup: dict, adapter: "BaseAdapter"
+) -> tuple[str, float]:
+    messages: list[dict] = []
+    total_latency = 0.0
+
+    for chain_id in attack.chain:
+        context_attack = attack_lookup.get(chain_id)
+        if context_attack is None:
+            continue
+        prompts = context_attack.turns if context_attack.is_multi_turn else [context_attack.prompt]
+        for p in prompts:
+            messages.append({"role": "user", "content": p})
+            resp, latency_ms = await adapter.complete_conversation(messages, attack.system_prompt)
+            total_latency += latency_ms
+            messages.append({"role": "assistant", "content": resp})
+
+    # Execute main attack prompt in the established context
+    messages.append({"role": "user", "content": attack.prompt})
+    response, latency_ms = await adapter.complete_conversation(messages, attack.system_prompt)
+    total_latency += latency_ms
+    return response, total_latency
 
 
 async def _run_multi_turn(attack: "Attack", adapter: "BaseAdapter") -> tuple[str, float]:
@@ -69,6 +99,20 @@ async def _run_multi_turn(attack: "Attack", adapter: "BaseAdapter") -> tuple[str
     return scored_response, total_latency
 
 
+async def run_diff_campaign(
+    attacks: list[Attack],
+    adapter1: BaseAdapter,
+    adapter2: BaseAdapter,
+    concurrency: int = 5,
+    judge_adapter: BaseAdapter | None = None,
+) -> tuple[list[AttackResult], list[AttackResult]]:
+    results1, results2 = await asyncio.gather(
+        run_campaign(attacks, adapter1, concurrency, judge_adapter=judge_adapter),
+        run_campaign(attacks, adapter2, concurrency, judge_adapter=judge_adapter),
+    )
+    return list(results1), list(results2)
+
+
 async def run_campaign(
     attacks: list[Attack],
     adapter: BaseAdapter,
@@ -79,12 +123,15 @@ async def run_campaign(
     semaphore = asyncio.Semaphore(concurrency)
     results: list[AttackResult] = []
     completed = 0
+    attack_lookup = {a.id: a for a in attacks}
 
     async def run_one(attack: Attack) -> AttackResult:
         nonlocal completed
         async with semaphore:
             try:
-                if attack.is_multi_turn:
+                if attack.is_chained:
+                    response, latency_ms = await _run_chained(attack, attack_lookup, adapter)
+                elif attack.is_multi_turn:
                     response, latency_ms = await _run_multi_turn(attack, adapter)
                 else:
                     response, latency_ms = await adapter.complete(attack.prompt, attack.system_prompt)

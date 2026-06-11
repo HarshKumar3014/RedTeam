@@ -33,16 +33,22 @@ class Attack(BaseModel):
     prompt: str = ""
     turns: list[str] = []
     score_turn: int = -1
+    chain: list[str] = []
     system_prompt: Optional[str] = None
     expected_behavior: ExpectedBehavior
     detection_patterns: list[str] = []
     refusal_patterns: list[str] = []
     tags: list[str] = []
     description: str = ""
+    pack_version: str = ""
 
     @property
     def is_multi_turn(self) -> bool:
         return len(self.turns) > 1
+
+    @property
+    def is_chained(self) -> bool:
+        return len(self.chain) > 0
 
 
 class AttackResult(BaseModel):
@@ -78,6 +84,37 @@ class ReportCard(BaseModel):
     categories: dict[str, CategorySummary]
     results: list[AttackResult]
     recommendations: list[str]
+    pack_versions: dict[str, str] = {}
+
+
+class ModelComparison(BaseModel):
+    attack_id: str
+    attack_name: str
+    category: str
+    severity: str
+    model1_passed: bool
+    model1_score: float
+    model2_passed: bool
+    model2_score: float
+
+
+class DiffReport(BaseModel):
+    model1_id: str
+    model2_id: str
+    adapter1: str
+    adapter2: str
+    timestamp: str
+    duration_seconds: float
+    total_attacks: int
+    model1_overall: float
+    model2_overall: float
+    model1_grade: str
+    model2_grade: str
+    comparisons: list[ModelComparison]
+    model1_only_failures: list[str]
+    model2_only_failures: list[str]
+    both_failed: list[str]
+    pack_versions: dict[str, str] = {}
 
 
 SEVERITY_WEIGHTS = {

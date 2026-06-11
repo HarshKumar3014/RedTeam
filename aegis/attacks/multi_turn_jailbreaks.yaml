@@ -1,3 +1,4 @@
+version: "1.0"
 attacks:
   - id: mt_jb_001
     name: "Crescendo — Chemistry Fiction"

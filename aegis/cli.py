@@ -14,8 +14,8 @@ from rich.text import Text
 
 from aegis import AttackResult
 from aegis.adapters import AdapterError, get_adapter
-from aegis.report import build_report, export_html, export_json, export_markdown
-from aegis.runner import load_attacks, run_campaign
+from aegis.report import build_diff_report, build_report, export_html, export_json, export_markdown
+from aegis.runner import load_attacks, run_campaign, run_diff_campaign
 
 console = Console()
 
@@ -105,7 +105,7 @@ def run(model, adapter, base_url, categories, severity, concurrency, output, jud
     cat_list = [c.strip() for c in categories.split(",")] if categories else None
 
     try:
-        attacks = load_attacks(categories=cat_list, min_severity=severity)
+        attacks, pack_versions = load_attacks(categories=cat_list, min_severity=severity)
     except Exception as e:
         console.print(f"[red]Failed to load attacks: {e}[/red]")
         sys.exit(1)
@@ -177,7 +177,7 @@ def run(model, adapter, base_url, categories, severity, concurrency, output, jud
             )
         duration = time.monotonic() - start
 
-    report = build_report(results, model, adapter, duration)
+    report = build_report(results, model, adapter, duration, pack_versions)
 
     fmt = _detect_format(output)
     if fmt == "json":
@@ -266,7 +266,7 @@ def dashboard(report_file, port, host):
 def list_attacks(category, severity, fmt):
     """List all available attacks."""
     cat_list = [category] if category else None
-    attacks = load_attacks(categories=cat_list, min_severity=severity)
+    attacks, _ = load_attacks(categories=cat_list, min_severity=severity)
 
     if fmt == "json":
         import json as json_mod
@@ -291,3 +291,93 @@ def list_attacks(category, severity, fmt):
             ", ".join(a.tags[:3]),
         )
     console.print(table)
+
+
+@cli.command()
+@click.argument("model1")
+@click.argument("model2")
+@click.option("--adapter", default="ollama", show_default=True,
+              help="Adapter for model1 (and model2 unless --adapter2 set)")
+@click.option("--adapter2", default=None, help="Adapter for model2 (defaults to --adapter)")
+@click.option("--base-url", default=None, help="Base URL for model1 adapter")
+@click.option("--base-url2", default=None, help="Base URL for model2 adapter")
+@click.option("--categories", default=None, help="Comma-separated categories to test")
+@click.option("--severity", default="low", show_default=True, help="Min severity")
+@click.option("--concurrency", default=5, show_default=True, help="Parallel requests per model")
+@click.option("--output", default="diff_report.json", show_default=True, help="Output path (.json)")
+def diff(model1, model2, adapter, adapter2, base_url, base_url2, categories, severity, concurrency, output):
+    """Compare two models on the same attack suite."""
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    cat_list = [c.strip() for c in categories.split(",")] if categories else None
+
+    try:
+        attacks, pack_versions = load_attacks(categories=cat_list, min_severity=severity)
+    except Exception as e:
+        console.print(f"[red]Failed to load attacks: {e}[/red]")
+        sys.exit(1)
+
+    if not attacks:
+        console.print("[yellow]No attacks matched filters.[/yellow]")
+        sys.exit(0)
+
+    adapter2_name = adapter2 or adapter
+    kwargs1 = {"base_url": base_url} if base_url else {}
+    kwargs2 = {"base_url": base_url2} if base_url2 else {}
+
+    try:
+        target1 = get_adapter(adapter, model1, **kwargs1)
+        target2 = get_adapter(adapter2_name, model2, **kwargs2)
+    except AdapterError as e:
+        console.print(f"[red]Adapter error: {e}[/red]")
+        sys.exit(1)
+
+    _print_banner()
+    console.print(f"  Model 1: [cyan]{model1}[/cyan] via [cyan]{adapter}[/cyan]")
+    console.print(f"  Model 2: [cyan]{model2}[/cyan] via [cyan]{adapter2_name}[/cyan]")
+    console.print(f"  Attacks: [cyan]{len(attacks)}[/cyan] | Concurrency: [cyan]{concurrency}[/cyan]\n")
+
+    start = time.monotonic()
+    console.print("[dim]Running both models concurrently...[/dim]")
+    results1, results2 = asyncio.run(run_diff_campaign(attacks, target1, target2, concurrency))
+    duration = time.monotonic() - start
+
+    diff_report = build_diff_report(
+        results1, results2, model1, model2, adapter, adapter2_name, duration, pack_versions
+    )
+
+    import json as json_mod
+    Path(output).write_text(diff_report.model_dump_json(indent=2))
+
+    # Print comparison table
+    grade_color = lambda g: {"A": "green", "B": "cyan", "C": "yellow", "D": "orange3", "F": "red"}.get(g, "white")
+    console.print(f"\n[bold]Differential Results ({duration:.1f}s)[/bold]")
+
+    summary = Table(show_header=True, header_style="bold blue", box=None)
+    summary.add_column("Model", width=30)
+    summary.add_column("Score", width=10)
+    summary.add_column("Grade", width=8)
+    summary.add_column("Only Failures", width=16)
+    summary.add_row(
+        model1,
+        f"{diff_report.model1_overall:.1f}/100",
+        Text(diff_report.model1_grade, style=grade_color(diff_report.model1_grade)),
+        str(len(diff_report.model1_only_failures)),
+    )
+    summary.add_row(
+        model2,
+        f"{diff_report.model2_overall:.1f}/100",
+        Text(diff_report.model2_grade, style=grade_color(diff_report.model2_grade)),
+        str(len(diff_report.model2_only_failures)),
+    )
+    console.print(summary)
+
+    if diff_report.model1_only_failures:
+        console.print(f"\n[red]{model1} only failed:[/red] {', '.join(diff_report.model1_only_failures[:10])}")
+    if diff_report.model2_only_failures:
+        console.print(f"[red]{model2} only failed:[/red] {', '.join(diff_report.model2_only_failures[:10])}")
+    if diff_report.both_failed:
+        console.print(f"[yellow]Both failed:[/yellow] {', '.join(diff_report.both_failed[:10])}")
+
+    console.print(f"\n[dim]Diff report saved to {output}[/dim]")

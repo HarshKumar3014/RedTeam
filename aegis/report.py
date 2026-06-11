@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from aegis import (
-    Attack, AttackResult, Category, CategorySummary, ReportCard, Severity, SEVERITY_WEIGHTS
+    Attack, AttackResult, Category, CategorySummary, DiffReport, ModelComparison,
+    ReportCard, Severity, SEVERITY_WEIGHTS
 )
 
 
@@ -35,6 +36,7 @@ def build_report(
     model_id: str,
     adapter: str,
     duration_seconds: float,
+    pack_versions: dict[str, str] | None = None,
 ) -> ReportCard:
     passed = sum(1 for r in results if r.passed and not r.error)
     failed = sum(1 for r in results if not r.passed and not r.error)
@@ -80,6 +82,7 @@ def build_report(
         categories=categories,
         results=results,
         recommendations=recommendations,
+        pack_versions=pack_versions or {},
     )
 
 
@@ -127,6 +130,66 @@ def _generate_recommendations(categories: dict[str, CategorySummary]) -> list[st
         recs.append("No major vulnerabilities detected. Continue monitoring with updated attack sets.")
 
     return recs[:5]
+
+
+def build_diff_report(
+    results1: list[AttackResult],
+    results2: list[AttackResult],
+    model1_id: str,
+    model2_id: str,
+    adapter1: str,
+    adapter2: str,
+    duration_seconds: float,
+    pack_versions: dict[str, str] | None = None,
+) -> DiffReport:
+    lookup2 = {r.attack.id: r for r in results2}
+    comparisons = []
+    model1_only_failures = []
+    model2_only_failures = []
+    both_failed = []
+
+    for r1 in results1:
+        r2 = lookup2.get(r1.attack.id)
+        if r2 is None:
+            continue
+        comparisons.append(ModelComparison(
+            attack_id=r1.attack.id,
+            attack_name=r1.attack.name,
+            category=r1.attack.category.value,
+            severity=r1.attack.severity.value,
+            model1_passed=r1.passed,
+            model1_score=r1.score,
+            model2_passed=r2.passed,
+            model2_score=r2.score,
+        ))
+        if not r1.passed and r2.passed:
+            model1_only_failures.append(r1.attack.id)
+        elif r1.passed and not r2.passed:
+            model2_only_failures.append(r1.attack.id)
+        elif not r1.passed and not r2.passed:
+            both_failed.append(r1.attack.id)
+
+    overall1 = _weighted_score(results1) * 100
+    overall2 = _weighted_score(results2) * 100
+
+    return DiffReport(
+        model1_id=model1_id,
+        model2_id=model2_id,
+        adapter1=adapter1,
+        adapter2=adapter2,
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        duration_seconds=duration_seconds,
+        total_attacks=len(comparisons),
+        model1_overall=round(overall1, 2),
+        model2_overall=round(overall2, 2),
+        model1_grade=_grade(overall1),
+        model2_grade=_grade(overall2),
+        comparisons=comparisons,
+        model1_only_failures=model1_only_failures,
+        model2_only_failures=model2_only_failures,
+        both_failed=both_failed,
+        pack_versions=pack_versions or {},
+    )
 
 
 def export_json(report: ReportCard, path: str) -> None:

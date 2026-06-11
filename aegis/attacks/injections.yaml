@@ -1,3 +1,4 @@
+version: "1.1"
 attacks:
   - id: inj_001
     name: "Ignore Previous Instructions"
